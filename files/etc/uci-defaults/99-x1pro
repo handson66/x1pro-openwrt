@@ -6,12 +6,20 @@ uci set system.@system[0].zonename='Asia/Singapore'
 uci set system.@system[0].timezone='<+08>-8'
 uci set luci.main.lang='zh_cn'
 uci set luci.main.mediaurlbase='/luci-static/argon'
+
+# 网络加速：软件 + 硬件流量卸载
+uci set firewall.@defaults[0].flow_offloading='1'
+uci set firewall.@defaults[0].flow_offloading_hw='1'
+
+# 无线：只设国家码 AU，SSID 和密码刷完自己设
+[ -s /etc/config/wireless ] || wifi config
+for d in $(uci show wireless 2>/dev/null | grep "=wifi-device" | cut -d. -f2 | cut -d= -f1); do
+  uci set wireless.$d.country='AU'
+done
 uci commit
 
-# 软件源：保留官方源，另加一份清华镜像
+# 软件源：保留官方源，另加清华镜像
 D=/etc/apk/repositories.d
-if [ -f $D/distfeeds.list ]; then
-  sed 's#https\?://downloads.openwrt.org#https://mirrors.tuna.tsinghua.edu.cn/openwrt#' \
-    $D/distfeeds.list > $D/mirror-cn.list
-fi
+[ -f $D/distfeeds.list ] && sed 's#https\?://downloads.openwrt.org#https://mirrors.tuna.tsinghua.edu.cn/openwrt#' \
+  $D/distfeeds.list > $D/mirror-cn.list
 exit 0
