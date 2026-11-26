@@ -68,9 +68,12 @@ jobs:
           echo "===== 内核版本 ====="; grep KERNEL_PATCHVER target/linux/mediatek/Makefile
           echo "===== 检查 ====="
           for p in luci-theme-argon luci-app-samba4 luci-app-upnp luci-app-ttyd luci-app-wol \
-                   luci-app-mwan3 kmod-sched-bpf kmod-nft-tproxy kmod-tun; do
+                   luci-app-mwan3 kmod-sched-bpf kmod-nft-tproxy kmod-tun \
+                   dnsmasq-full kmod-nf-conntrack-netlink kmod-zram zram-swap \
+                   kmod-nft-queue kmod-tcp-bbr; do
             grep -q "CONFIG_PACKAGE_$p=y" .config && echo "OK   $p" || echo "缺失 $p"
           done
+          grep -q "CONFIG_PACKAGE_dnsmasq=y" .config && echo "!! 普通 dnsmasq 还在，会和 full 冲突" || echo "OK   已去掉普通 dnsmasq"
           grep -E "KERNEL_DEBUG_INFO_BTF=" .config || echo "!! BTF 未开启"
 
       - name: 下载源码包
