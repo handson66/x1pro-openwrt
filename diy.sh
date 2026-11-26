@@ -1,24 +1,22 @@
 #!/bin/bash
-set -e
+step(){ echo; echo ">>> \$1"; }
+die(){ echo "!! 失败：\$1"; exit 1; }
 
-# ---------- 1. 512MB 分区：ubi 从 0x5c0000 扩到闪存可用末尾 ----------
-DTS=$(grep -rl "cudy,tr3000-v1" target/linux/ | grep -E "\.dtsi?$" || true)
-echo "TR3000 DTS 文件: $DTS"
-[ -z "$DTS" ] && { echo "!! 找不到 TR3000 DTS"; exit 1; }
+step "1. 512MB 分区补丁"
+DTS=$(grep -rl "cudy,tr3000-v1" target/linux/ | grep -E "\.dtsi?$")
+echo "DTS: $DTS"
+[ -z "$DTS" ] && die "找不到 TR3000 DTS"
 for f in $DTS; do
   sed -i -E 's/reg = <0x5c0000 0x[0-9a-fA-F]+>/reg = <0x5c0000 0x1f240000>/' "$f"
 done
-grep -n "0x5c0000" $DTS || { echo "!! 没有 ubi@0x5c0000，分区布局与预期不符"; exit 1; }
+grep -n "0x5c0000" $DTS || die "ubi@0x5c0000 不存在"
 
-# 放宽固件体积上限
+step "2. IMAGE_SIZE"
 MK=target/linux/mediatek/image/filogic.mk
 perl -0pi -e 's/(define Device\/cudy_tr3000-v1\n(?:(?!endef).)*?IMAGE_SIZE := )\S+/${1}480m/s' $MK
-echo "===== TR3000 设备定义 ====="
 awk '/define Device\/cudy_tr3000-v1$/,/endef/' $MK
-awk '/define Device\/cudy_tr3000-v1$/,/endef/' $MK | grep -q "IMAGE_SIZE := 480m" \
-  || echo "!! IMAGE_SIZE 未修改，若编译报 image too big 请贴日志"
 
-# ---------- 2. 第三方 feeds ----------
+step "3. 添加 feeds"
 cat >> feeds.conf.default <<'EOF'
 src-git passwall_packages https://github.com/xiaorouji/openwrt-passwall-packages.git;main
 src-git passwall https://github.com/xiaorouji/openwrt-passwall.git;main
@@ -26,43 +24,38 @@ src-git nikki https://github.com/nikkinikki-org/OpenWrt-nikki.git;main
 src-git istore https://github.com/linkease/istore.git;main
 src-git kenzo https://github.com/kenzok8/openwrt-packages.git;master
 EOF
+cat feeds.conf.default
 
-./scripts/feeds update -a || echo "!! feeds update 有错误，见上方日志"
-for f in passwall_packages passwall nikki istore kenzo; do
-  [ -d feeds/$f ] && echo "OK   feed $f" || { echo "!! feed $f 拉取失败"; exit 1; }
+step "4. feeds update"
+./scripts/feeds update -a; echo "feeds update 返回码: $?"
+for f in packages luci passwall_packages passwall nikki istore kenzo; do
+  [ -d feeds/$f ] && echo "OK   feed $f" || die "feed $f 拉取失败"
 done
 
-# 新版 golang
+step "5. golang"
 rm -rf feeds/packages/lang/golang
 git clone --depth 1 -b 25.x https://github.com/sbwml/packages_lang_golang feeds/packages/lang/golang \
- || git clone --depth 1 -b 24.x https://github.com/sbwml/packages_lang_golang feeds/packages/lang/golang
+ || git clone --depth 1 -b 24.x https://github.com/sbwml/packages_lang_golang feeds/packages/lang/golang \
+ || die "golang 拉取失败"
 
-# MosDNS
+step "6. 额外包"
 rm -rf feeds/packages/net/mosdns feeds/packages/net/v2ray-geodata
-git clone --depth 1 -b v5 https://github.com/sbwml/luci-app-mosdns package/mosdns
-git clone --depth 1 https://github.com/sbwml/v2ray-geodata package/v2ray-geodata
+git clone --depth 1 -b v5 https://github.com/sbwml/luci-app-mosdns package/mosdns || echo "!! mosdns 失败"
+git clone --depth 1 https://github.com/sbwml/v2ray-geodata package/v2ray-geodata || echo "!! geodata 失败"
+git clone --depth 1 https://github.com/QiuSimons/luci-app-daed package/dae || echo "!! daed 失败"
+git clone --depth 1 https://github.com/asvow/luci-app-tailscale package/luci-app-tailscale || echo "!! tailscale luci 失败"
+git clone --depth 1 https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon || echo "!! argon 失败"
+git clone --depth 1 https://github.com/jerrykuku/luci-app-argon-config package/luci-app-argon-config || echo "!! argon-config 失败"
 
-# daed（Honk 备用）
-git clone --depth 1 https://github.com/QiuSimons/luci-app-daed package/dae
-
-# Tailscale LuCI
-git clone --depth 1 https://github.com/asvow/luci-app-tailscale package/luci-app-tailscale
-
-# argon 主题
-git clone --depth 1 https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon
-git clone --depth 1 https://github.com/jerrykuku/luci-app-argon-config package/luci-app-argon-config
-
-# turboacc（失败则跳过）
+step "7. turboacc"
 curl -sSL https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh -o add_turboacc.sh \
-  && bash add_turboacc.sh --no-sfe || echo "!! turboacc 添加失败，已跳过"
+  && bash add_turboacc.sh --no-sfe || echo "!! turboacc 跳过"
 
-# 安装 feeds
-./scripts/feeds install -a -p packages
-./scripts/feeds install -a -p luci
-./scripts/feeds install -a -p routing
-./scripts/feeds install -a -p telephony
+step "8. feeds install"
+for p in packages luci routing telephony nikki istore; do ./scripts/feeds install -a -p $p; done
 ./scripts/feeds install -a -f -p passwall_packages
 ./scripts/feeds install -a -f -p passwall
-./scripts/feeds install -a -p nikki
-./scripts/feeds install -a -p istore
-./scripts/feeds install -p kenzo luci-app-adguardhome adguardhome luci-app-vlmcsd vlmcsd luci-app-zerotier || true
+./scripts/feeds install -p kenzo luci-app-adguardhome adguardhome luci-app-vlmcsd vlmcsd luci-app-zerotier
+
+step "diy.sh 完成"
+exit 0
