@@ -18,8 +18,8 @@ awk '/define Device\/cudy_tr3000-v1$/,/endef/' $MK
 
 step "3. 添加 feeds"
 cat >> feeds.conf.default <<'EOF'
-src-git passwall_packages https://github.com/xiaorouji/openwrt-passwall-packages.git;main
-src-git passwall https://github.com/xiaorouji/openwrt-passwall.git;main
+src-git passwall_packages https://github.com/xiaorouji/openwrt-passwall-packages.git
+src-git passwall https://github.com/xiaorouji/openwrt-passwall.git
 src-git nikki https://github.com/nikkinikki-org/OpenWrt-nikki.git;main
 src-git istore https://github.com/linkease/istore.git;main
 src-git kenzo https://github.com/kenzok8/openwrt-packages.git;master
@@ -28,9 +28,15 @@ cat feeds.conf.default
 
 step "4. feeds update"
 ./scripts/feeds update -a; echo "feeds update 返回码: $?"
-for f in packages luci passwall_packages passwall nikki istore kenzo; do
-  [ -d feeds/$f ] && echo "OK   feed $f" || die "feed $f 拉取失败"
+for f in packages luci; do
+  [ -d feeds/$f ] || { echo "!! 核心 feed $f 失败"; exit 1; }
 done
+for f in passwall_packages passwall nikki istore kenzo; do
+  if [ -d feeds/$f ]; then echo "OK   feed $f"
+  else echo "!! feed $f 失败，重试单独拉取"; ./scripts/feeds update $f || echo "!! feed $f 仍失败，跳过该插件"
+  fi
+done
+./scripts/feeds update -i
 
 step "5. golang"
 rm -rf feeds/packages/lang/golang
