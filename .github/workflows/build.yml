@@ -43,6 +43,24 @@ jobs:
           echo "===== 可用 25.12 版本 ====="; git tag | grep 25.12 || true
           git checkout ${{ github.event.inputs.tag }}
 
+      - name: 恢复缓存
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            openwrt/dl
+            openwrt/.ccache
+          key: x1pro-${{ github.event.inputs.tag }}-${{ github.run_id }}
+          restore-keys: |
+            x1pro-${{ github.event.inputs.tag }}-
+
+      - name: 设置 ccache
+        run: |
+          echo "CCACHE_DIR=$GITHUB_WORKSPACE/openwrt/.ccache" >> $GITHUB_ENV
+          mkdir -p openwrt/.ccache openwrt/dl
+          ccache -d openwrt/.ccache -M 6G
+          ccache -d openwrt/.ccache -s || true
+          du -sh openwrt/dl openwrt/.ccache || true
+
       - name: 打补丁、加第三方源
         run: |
           chmod +x diy.sh
@@ -57,10 +75,10 @@ jobs:
           make defconfig
           echo "===== 内核版本（Honk 需 ≥6.12）====="
           grep KERNEL_PATCHVER target/linux/mediatek/Makefile
-          echo "===== BTF ====="
-          grep -E "KERNEL_DEBUG_INFO_BTF|ALLOW_BTF_MISMATCH" .config
+          echo "===== BTF / ccache ====="
+          grep -E "KERNEL_DEBUG_INFO_BTF|ALLOW_BTF_MISMATCH|CONFIG_CCACHE" .config
           echo "===== 插件检查 ====="
-          for p in luci-app-passwall luci-app-nikki luci-app-daed luci-app-mosdns \
+          for p in luci-app-passwall luci-app-nikki luci-app-mosdns \
                    luci-app-adguardhome luci-app-store luci-app-zerotier luci-app-vlmcsd \
                    luci-app-dockerman luci-app-turboacc luci-app-mwan3 luci-app-tailscale \
                    tailscale luci-theme-argon kmod-sched-bpf; do
@@ -77,6 +95,16 @@ jobs:
         run: |
           cd openwrt
           make -j$(nproc) || make -j1 V=s
+          ccache -s || true
+
+      - name: 保存缓存
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            openwrt/dl
+            openwrt/.ccache
+          key: x1pro-${{ github.event.inputs.tag }}-${{ github.run_id }}
 
       - name: 整理产物
         if: always()
