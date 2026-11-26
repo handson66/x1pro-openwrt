@@ -27,7 +27,10 @@ src-git istore https://github.com/linkease/istore.git;main
 src-git kenzo https://github.com/kenzok8/openwrt-packages.git;master
 EOF
 
-./scripts/feeds update -a
+./scripts/feeds update -a || echo "!! feeds update 有错误，见上方日志"
+for f in passwall_packages passwall nikki istore kenzo; do
+  [ -d feeds/$f ] && echo "OK   feed $f" || { echo "!! feed $f 拉取失败"; exit 1; }
+done
 
 # 新版 golang
 rm -rf feeds/packages/lang/golang
