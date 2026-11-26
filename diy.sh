@@ -48,7 +48,6 @@ step "6. 额外包"
 rm -rf feeds/packages/net/mosdns feeds/packages/net/v2ray-geodata
 git clone --depth 1 -b v5 https://github.com/sbwml/luci-app-mosdns package/mosdns || echo "!! mosdns 失败"
 git clone --depth 1 https://github.com/sbwml/v2ray-geodata package/v2ray-geodata || echo "!! geodata 失败"
-git clone --depth 1 https://github.com/QiuSimons/luci-app-daed package/dae || echo "!! daed 失败"
 git clone --depth 1 https://github.com/asvow/luci-app-tailscale package/luci-app-tailscale || echo "!! tailscale luci 失败"
 git clone --depth 1 https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon || echo "!! argon 失败"
 git clone --depth 1 https://github.com/jerrykuku/luci-app-argon-config package/luci-app-argon-config || echo "!! argon-config 失败"
