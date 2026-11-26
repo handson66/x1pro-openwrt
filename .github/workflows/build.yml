@@ -34,14 +34,11 @@ jobs:
             gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3 \
             python3-setuptools python3-dev python3-pyelftools rsync swig unzip \
             zlib1g-dev file wget curl libelf-dev zstd ccache
-          df -h
 
       - name: 拉取 OpenWrt 源码
         run: |
           git clone https://git.openwrt.org/openwrt/openwrt.git openwrt
-          cd openwrt
-          echo "===== 可用 25.12 版本 ====="; git tag | grep 25.12 || true
-          git checkout ${{ github.event.inputs.tag }}
+          cd openwrt && git checkout ${{ github.event.inputs.tag }}
 
       - name: 恢复缓存
         uses: actions/cache/restore@v4
@@ -49,53 +46,43 @@ jobs:
           path: |
             openwrt/dl
             openwrt/.ccache
-          key: x1pro-${{ github.event.inputs.tag }}-${{ github.run_id }}
+          key: x1pro-lite-${{ github.event.inputs.tag }}-${{ github.run_id }}
           restore-keys: |
-            x1pro-${{ github.event.inputs.tag }}-
+            x1pro-lite-${{ github.event.inputs.tag }}-
 
       - name: 设置 ccache
         run: |
           echo "CCACHE_DIR=$GITHUB_WORKSPACE/openwrt/.ccache" >> $GITHUB_ENV
           mkdir -p openwrt/.ccache openwrt/dl
-          ccache -d openwrt/.ccache -M 6G
-          ccache -d openwrt/.ccache -s || true
-          du -sh openwrt/dl openwrt/.ccache || true
+          ccache -d openwrt/.ccache -M 5G
 
-      - name: 打补丁、加第三方源
-        run: |
-          chmod +x diy.sh
-          cd openwrt && bash ../diy.sh
+      - name: 打补丁
+        run: cd openwrt && bash ../diy.sh
 
       - name: 生成配置
         run: |
           cp -r files openwrt/
           chmod +x openwrt/files/etc/uci-defaults/99-x1pro
           cp x1pro.config openwrt/.config
-          cd openwrt
-          make defconfig
-          echo "===== 内核版本（Honk 需 ≥6.12）====="
-          grep KERNEL_PATCHVER target/linux/mediatek/Makefile
-          echo "===== BTF / ccache ====="
-          grep -E "KERNEL_DEBUG_INFO_BTF|ALLOW_BTF_MISMATCH|CONFIG_CCACHE" .config
-          echo "===== 插件检查 ====="
-          for p in luci-app-passwall luci-app-nikki luci-app-mosdns \
-                   luci-app-adguardhome luci-app-store luci-app-zerotier luci-app-vlmcsd \
-                   luci-app-dockerman luci-app-turboacc luci-app-mwan3 luci-app-tailscale \
-                   tailscale luci-theme-argon kmod-sched-bpf; do
+          cd openwrt && make defconfig
+          echo "===== 内核版本 ====="; grep KERNEL_PATCHVER target/linux/mediatek/Makefile
+          echo "===== 检查 ====="
+          for p in luci-theme-argon luci-app-samba4 luci-app-upnp luci-app-ttyd luci-app-wol \
+                   luci-app-mwan3 kmod-sched-bpf kmod-nft-tproxy kmod-tun; do
             grep -q "CONFIG_PACKAGE_$p=y" .config && echo "OK   $p" || echo "缺失 $p"
           done
+          grep -E "KERNEL_DEBUG_INFO_BTF=" .config || echo "!! BTF 未开启"
 
       - name: 下载源码包
         run: |
           cd openwrt
           make download -j8 || make download -j1 V=s
-          find dl -size -1024c -exec rm -f {} \;
 
       - name: 编译
         run: |
           cd openwrt
           make -j$(nproc) || make -j1 V=s
-          ccache -s || true
+          ls -lh bin/targets/mediatek/filogic/*sysupgrade* || { echo "!! 没有生成固件"; exit 1; }
 
       - name: 保存缓存
         if: always()
@@ -104,18 +91,14 @@ jobs:
           path: |
             openwrt/dl
             openwrt/.ccache
-          key: x1pro-${{ github.event.inputs.tag }}-${{ github.run_id }}
-
-      - name: 整理产物
-        if: always()
-        run: |
-          mkdir -p out
-          cp -r openwrt/bin/targets/mediatek/filogic/* out/ 2>/dev/null || true
-          cp openwrt/.config out/x1pro-final.config 2>/dev/null || true
+          key: x1pro-lite-${{ github.event.inputs.tag }}-${{ github.run_id }}
 
       - name: 上传固件
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: X1pro-OpenWrt-${{ github.event.inputs.tag }}
-          path: out/
+          include-hidden-files: true
+          path: |
+            openwrt/bin/targets/mediatek/filogic/*
+            openwrt/.config
